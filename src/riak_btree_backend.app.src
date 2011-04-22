@@ -1,0 +1,12 @@
+{application, riak_btree_backend,
+ [
+  {description, ""},
+  {vsn, "1"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {mod, { riak_btree_backend_app, []}},
+  {env, []}
+ ]}.
