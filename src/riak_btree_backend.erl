@@ -22,7 +22,9 @@
 
 %% @doc riak_kv_btree_backend is a Riak storage backend using btree.
 
--module(riak_kv_btree_backend).
+-module(riak_btree_backend).
+-author('Kresten Krab Thorup <krab@trifork.com>').
+
 -behavior(riak_kv_backend).
 -behavior(gen_server).
 
@@ -45,12 +47,15 @@
 % @spec start(Partition :: integer(), Config :: proplist()) ->
 %                        {ok, state()} | {{error, Reason :: term()}, state()}
 start(Partition, Config) ->
+    %% make sure the app is started
+    ok = start_app(),
+
     gen_server:start_link(?MODULE, [Partition, Config], []).
 
 init([Partition, Config]) ->
-    ConfigRoot = proplists:get_value(riak_kv_btree_backend_root, Config),
+    ConfigRoot = get_opt(data_root, Config),
     if ConfigRoot =:= undefined ->
-            riak:stop("riak_kv_btree_backend_root unset, failing.~n");
+            riak:stop("riak_btree_backend::data_root unset, failing.~n");
        true -> ok
     end,
 
@@ -58,7 +63,7 @@ init([Partition, Config]) ->
     case filelib:ensure_dir(TablePath) of
         ok -> ok;
         _Error ->
-            riak:stop("riak_kv_btree_backend could not ensure"
+            riak:stop("riak_btree_backend could not ensure"
                       " the existence of its root directory")
     end,
 
@@ -93,6 +98,28 @@ init([Partition, Config]) ->
             {error, Error}
     end
 .
+
+get_opt(Key, Opts) ->
+    case proplists:get_value(Key, Opts) of
+        undefined ->
+            case application:get_env(?MODULE, Key) of
+                {ok, Value} -> Value;
+                undefined -> undefined
+            end;
+        Value ->
+            Value
+    end.
+
+start_app() ->
+    case application:start(?MODULE) of
+        ok ->
+            ok;
+        {error, {already_started, ?MODULE}} ->
+            ok;
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
 
 %% @private
 handle_cast(_, State) -> {noreply, State}.
@@ -280,12 +307,12 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
 simple_test() ->
     ?assertCmd("rm -rf test/btree-backend"),
-    Config = [{riak_kv_btree_backend_root, "test/btree-backend"}],
+    Config = [{data_root, "test/btree-backend"}],
     riak_kv_backend:standard_test(?MODULE, Config).
 
 list_bucket_test() ->
     ?assertCmd("rm -rf test/btree-backend"),
-    Config = [{riak_kv_btree_backend_root, "test/btree-backend"}],
+    Config = [{data_root, "test/btree-backend"}],
 
     {ok, S} = ?MODULE:start(42, Config),
     ok = ?MODULE:put(S, {<<"b1">>,<<"k1">>}, <<"v1">>),
@@ -314,7 +341,7 @@ eqc_test_inner() ->
                 end,
                 [file:delete(S#state.path) || S <- OldS]
         end,
-    Config = [{riak_kv_btree_backend_root, "test/btree-backend"}],
+    Config = [{data_root, "test/btree-backend"}],
     ?assertCmd("rm -rf test/btree-backend"),
     ?assertEqual(true, backend_eqc:test(?MODULE, false, Config, Cleanup)).
 -endif. % EQC

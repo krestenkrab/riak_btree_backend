@@ -8,8 +8,10 @@ append-only format, and this module provides no means to do
 
 Compared to other backends, this has the following properties:
 
-- keeps no keys in memory
-- is pure Erlang (makes me, and Erjang happy)
+- Does not keep keys in memory
+- Stores keys sorted so list_buckets and list_keys_in_bucket
+  have decent performance
+- Is pure Erlang (makes me and Erjang happy)
 
 As is, this could be a fine format for storing log records that you'll
 never delete anyway; but if you need compaction then you'd have to
@@ -19,8 +21,21 @@ To configure riak to use this, edit your `app.config` to use the btree
 backend.
 
     {riak_kv, [
-        {storage_backend, riak_kv_btree_backend},
+        {storage_backend, riak_btree_backend},
         ...
+
+    {riak_btree_backend, [
+             {data_root, "data/btree"}
+        ]},
+
+The easiest way to pull in all the right things in your riak is to
+build your own, adding this to the `deps` section of riak's
+`riak/rebar.config`.
+
+    {riak_btree_backend, "0.1.*",
+        {git, "git://github.com/krestenkrab/riak_btree_backend",
+        {branch, "master"}}},
+
 
 Happy hacking!
 
