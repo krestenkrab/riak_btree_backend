@@ -1,9 +1,9 @@
 #! /usr/bin/env escript
 %% -*- erlang -*-
 %%
-%% Riak_Kv_Btree_Backend Torture Tests
+%% Riak_Btree_Backend Torture Tests
 %%
-%% Pre-populates a riak_kv_btree_backend file with a known range of keys, the value for
+%% Pre-populates a riak_btree_backend file with a known range of keys, the value for
 %% each key stores the key itself and a sequence number for the write
 %% (initially 1).
 %%
@@ -50,7 +50,7 @@ main(Args) ->
         case process_args([parse_arg(Arg) || Arg <- Args], #state{}) of
             {ok, State} ->
                 print_params(State),
-                ensure_riak_kv_btree_backend(),
+                ensure_riak_btree_backend(),
                 ensure_deps(),
                 do_test(State);
             syntax ->
@@ -197,7 +197,7 @@ start_writer(State) ->
     Caller = self(),
     Pid = spawn_link(fun() ->
                              Opts = writer_opts(State),
-                             {ok, Ref} = riak_kv_btree_backend:start(0, Opts),
+                             {ok, Ref} = riak_btree_backend:start(0, Opts),
                              write_proc(Ref,  Caller)
                      end),
 %%X    io:format("Started writer pid ~p\n", [Pid]),
@@ -205,7 +205,7 @@ start_writer(State) ->
 
 writer_opts(State) ->
     lists:flatten([
-                   [read_write, {riak_kv_btree_backend_root, State#state.cask}],
+                   [read_write, {riak_btree_backend_root, State#state.cask}],
                    case State#state.max_file_size of
                        Size when is_integer(Size), Size > 0->
                            [{max_file_size, Size}];
@@ -276,27 +276,27 @@ write_proc(Ref, Caller) ->
 write(_Ref, 0, _Seq) ->
     ok;
 write(Ref, Key, Seq) ->
-    riak_kv_btree_backend:put(Ref, {<<"B">>,<<Key:32>>}, term_to_binary({Key, Seq})),
+    riak_btree_backend:put(Ref, {<<"B">>,<<Key:32>>}, term_to_binary({Key, Seq})),
     write(Ref, Key - 1, Seq).
 
 read_proc(Cask, NumKeys, Seq, Caller) ->
-    {ok,Ref} = riak_kv_btree_backend:start(0,[{riak_kv_btree_backend_root,Cask}]),
+    {ok,Ref} = riak_btree_backend:start(0,[{riak_btree_backend_root,Cask}]),
     read(Ref, NumKeys, Seq),
-    riak_kv_btree_backend:stop(Ref),
+    riak_btree_backend:stop(Ref),
     Caller ! {read_done, Seq}.
 
 read(_Ref, 0, _Iter) ->
     ok;
 read(Ref, Key, MinSeq) ->
-    {ok, Bin} = riak_kv_btree_backend:get(Ref, {<<"B">>, <<Key:32>>}),
+    {ok, Bin} = riak_btree_backend:get(Ref, {<<"B">>, <<Key:32>>}),
     {Key, Seq} = binary_to_term(Bin),
     true = (Seq >= MinSeq),
     read(Ref, Key - 1, MinSeq).
 
 fold_proc(Cask, NumKeys, Seq, Caller) ->
-    {ok,Ref} = riak_kv_btree_backend:start(0,[{riak_kv_btree_backend_root,Cask}]),
+    {ok,Ref} = riak_btree_backend:start(0,[{riak_btree_backend_root,Cask}]),
     fold(Ref, NumKeys, Seq),
-    riak_kv_btree_backend:stop(Ref),
+    riak_btree_backend:stop(Ref),
     Caller ! {fold_done, Seq}.
 
 fold(Ref, NumKeys, MinSeq) ->
@@ -305,7 +305,7 @@ fold(Ref, NumKeys, MinSeq) ->
                      true = (Seq >= MinSeq2),
                      {MinSeq2, [Key | Keys]}
              end,
-    {MinSeq, FoldedKeys} = riak_kv_btree_backend:fold(Ref, Folder, {MinSeq, []}),
+    {MinSeq, FoldedKeys} = riak_btree_backend:fold(Ref, Folder, {MinSeq, []}),
     %% Exp = lists:seq(1, NumKeys),
     %% Exp = lists:sort(FoldedKeys), % check we get the keys we expect
     check_fold(1, NumKeys, lists:sort(FoldedKeys)).
@@ -322,54 +322,54 @@ check_fold(Key1, _MaxKey, [_Key2 | _Rest]) ->
 
 
 merge_proc(Cask, Caller) ->
-    ok = riak_kv_btree_backend:merge(Cask),
+    ok = riak_btree_backend:merge(Cask),
     Caller ! merge_done.
 
 
-ensure_riak_kv_btree_backend() ->
-    case code:ensure_loaded(riak_kv_btree_backend) of
-        {module, riak_kv_btree_backend} ->
+ensure_riak_btree_backend() ->
+    case code:ensure_loaded(riak_btree_backend) of
+        {module, riak_btree_backend} ->
             ok;
         _ ->
             {ok, Cwd} = file:get_cwd(),
-            find_riak_kv_btree_backend(filename:split(Cwd))
+            find_riak_btree_backend(filename:split(Cwd))
     end.
 
-%% Look for riak_kv_btree_backend.beam in Cwd and Cwd/ebin
-find_riak_kv_btree_backend(["/"]) ->
-    erlang:error("Could not find riak_kv_btree_backend\n");
-find_riak_kv_btree_backend(Cwd) ->
-    case try_riak_kv_btree_backend_dir(Cwd) of
+%% Look for riak_btree_backend.beam in Cwd and Cwd/ebin
+find_riak_btree_backend(["/"]) ->
+    erlang:error("Could not find riak_btree_backend\n");
+find_riak_btree_backend(Cwd) ->
+    case try_riak_btree_backend_dir(Cwd) of
          true ->
             ok;
         false ->
-            case try_riak_kv_btree_backend_dir(Cwd ++ ["ebin"]) of
+            case try_riak_btree_backend_dir(Cwd ++ ["ebin"]) of
                 true ->
                     ok;
                 false ->
-                    find_riak_kv_btree_backend(parent_dir(Cwd))
+                    find_riak_btree_backend(parent_dir(Cwd))
             end
     end.
 
-try_riak_kv_btree_backend_dir(Dir) ->
+try_riak_btree_backend_dir(Dir) ->
     CodeDir = filename:join(Dir),
-    Beam = riak_kv_btree_backend_beam(CodeDir),
-    io:format("Looking for riak_kv_btree_backend in \"~s\".\n", [CodeDir]),
+    Beam = riak_btree_backend_beam(CodeDir),
+    io:format("Looking for riak_btree_backend in \"~s\".\n", [CodeDir]),
     case filelib:is_regular(Beam) of
         true ->
-            io:format("Adding riak_kv_btree_backend dir \"~s\".\n",
+            io:format("Adding riak_btree_backend dir \"~s\".\n",
                       [CodeDir]),
             code:add_pathz(CodeDir),
-            {module, riak_kv_btree_backend} = code:ensure_loaded(riak_kv_btree_backend),
+            {module, riak_btree_backend} = code:ensure_loaded(riak_btree_backend),
             true;
        _ ->
             false
     end.
 
 ensure_deps() ->
-    Riak_Kv_Btree_BackendBeam = code:where_is_file("riak_kv_btree_backend.beam"),
-    Riak_Kv_Btree_BackendDir = parent_dir(filename:split(filename:dirname(Riak_Kv_Btree_BackendBeam))),
-    Pattern = filename:join(Riak_Kv_Btree_BackendDir) ++ "/deps/*/ebin",
+    Riak_Btree_BackendBeam = code:where_is_file("riak_btree_backend.beam"),
+    Riak_Btree_BackendDir = parent_dir(filename:split(filename:dirname(Riak_Btree_BackendBeam))),
+    Pattern = filename:join(Riak_Btree_BackendDir) ++ "/deps/*/ebin",
     Deps = filelib:wildcard(Pattern),
     AddDepDir = fun(DepDir) ->
                         io:format("Adding dependency dir \"~s\".\n",
@@ -385,8 +385,8 @@ parent_dir(["/"]) ->
 parent_dir(Dirs) ->
     lists:reverse(tl(lists:reverse(Dirs))).
 
-riak_kv_btree_backend_beam(Cwd) ->
-    filename:join(Cwd, ["riak_kv_btree_backend" ++ code:objfile_extension()]).
+riak_btree_backend_beam(Cwd) ->
+    filename:join(Cwd, ["riak_btree_backend" ++ code:objfile_extension()]).
 
 process_args([], State) ->
     {ok, State};

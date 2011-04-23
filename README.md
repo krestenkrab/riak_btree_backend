@@ -1,5 +1,5 @@
-riak_kv_btree_backend
-=====================
+riak_btree_backend
+==================
 
 This module is a storage backend for [Riak](http://wiki.basho.com),
 which uses `couch_btree` to store data.  `couch_btree` is an
