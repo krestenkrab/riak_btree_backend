@@ -39,6 +39,15 @@ build your own, adding this to the `deps` section of riak's
 And, then update `riak/rel/reltool.config` to include
 `riak_btree_backend` in your release.
 
+
+Thanks
+------
+
+Acknowledgements go to the CouchDB team, the fine folks at Basho (the
+module borrows heavily from `riak_kv_ets_backend`), and to Ulf Wiger
+at Erlang Solutions for writing the beautiful little `sext` module.
+
+
 Happy hacking!
 
 Kresten
