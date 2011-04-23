@@ -36,6 +36,8 @@ build your own, adding this to the `deps` section of riak's
         {git, "git://github.com/krestenkrab/riak_btree_backend",
         {branch, "master"}}},
 
+And, then update `riak/rel/reltool.config` to include
+`riak_btree_backend` in your release.
 
 Happy hacking!
 
