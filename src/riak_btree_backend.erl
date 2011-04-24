@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% riak_kv_btree_backend: storage engine based on CouchDB B+ Tree
+%% riak_btree_backend: storage engine based on CouchDB B+ Tree
 %%
 %% Copyright (c) 2011 Trifork A/S  All Rights Reserved.
 %%
@@ -20,7 +20,7 @@
 %%
 %% -------------------------------------------------------------------
 
-%% @doc riak_kv_btree_backend is a Riak storage backend using btree.
+%% @doc riak_btree_backend is a Riak storage backend using btree.
 
 -module(riak_btree_backend).
 -author('Kresten Krab Thorup <krab@trifork.com>').
@@ -37,12 +37,17 @@
 -export([start/2,stop/1,get/2,put/3,list/1,list_bucket/2,fold_bucket_keys/4,
          delete/2,fold/3, is_empty/1, drop/1, callback/3]).
 
+%% api to compactor
+-export([finish_compact/1]).
+
 %% gen_server exports
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
 % @type state() = term().
--record(state, {btree, path}).
+-record(state, {btree, path, compactor, config}).
+
+-define(COMPACTION_CHECK_INTERVAL, timer:minutes(60)).
 
 % @spec start(Partition :: integer(), Config :: proplist()) ->
 %                        {ok, state()} | {{error, Reason :: term()}, state()}
@@ -50,7 +55,14 @@ start(Partition, Config) ->
     %% make sure the app is started
     ok = start_app(),
 
-    gen_server:start_link(?MODULE, [Partition, Config], []).
+    PID = gen_server:start_link(?MODULE, [Partition, Config], []),
+
+    Ref = make_ref(),
+    erlang:put(Ref,PID),
+    schedule_compaction(Ref),
+    maybe_schedule_sync(Ref),
+    PID.
+
 
 init([Partition, Config]) ->
     ConfigRoot = get_opt(data_root, Config),
@@ -70,35 +82,53 @@ init([Partition, Config]) ->
     BtreeName = list_to_atom(integer_to_list(Partition)),
     BtreeFileName = filename:join(TablePath, BtreeName),
 
+    initstate(BtreeFileName, Config).
+
+initstate(BtreeFileName, Config) ->
     case couch_file:open(BtreeFileName, [sys_db]) of
 
         {ok, Fd} -> %% open existing file
             {ok, #db_header{local_docs_btree_state = HeaderBtree}} =
                 couch_file:read_header(Fd),
             {ok, Bt} = couch_btree:open(HeaderBtree, Fd, []),
-            {ok, #state{ btree=Bt, path=BtreeFileName }};
+            {ok, #state{ btree=Bt, path=BtreeFileName, config=Config }};
 
         {error, enoent} ->
-            case couch_file:open(BtreeFileName, [create,sys_db]) of
-                {ok, Fd} ->
-                    Header = #db_header{},
-                    ok = couch_file:write_header(Fd, Header),
-                    {ok, Bt} = couch_btree:open(nil, Fd, []),
-                    {ok, #state{ btree=Bt, path=BtreeFileName }};
+            %% if we crashed during swapping a .compact file, then
+            %% we have a .save file to use
+            case couch_file:open(BtreeFileName ++ ".save", [sys_db]) of
+
+                {ok, Fd} -> %% open existing file
+                    file:rename(BtreeFileName ++ ".save", BtreeFileName),
+                    {ok, #db_header{local_docs_btree_state = HeaderBtree}} =
+                        couch_file:read_header(Fd),
+                    {ok, Bt} = couch_btree:open(HeaderBtree, Fd, []),
+                    {ok, #state{ btree=Bt, path=BtreeFileName, config=Config }};
+
+                {error, enoent} ->
+                    case couch_file:open(BtreeFileName, [create,sys_db]) of
+                        {ok, Fd} ->
+                            Header = #db_header{},
+                            ok = couch_file:write_header(Fd, Header),
+                            {ok, Bt} = couch_btree:open(nil, Fd, []),
+                            {ok, #state{ btree=Bt, path=BtreeFileName, config=Config }};
+
+                        {error, _} = Error ->
+                            Error;
+                        Error ->
+                            {error, Error}
+                    end;
 
                 {error, _} = Error ->
                     Error;
                 Error ->
                     {error, Error}
-            end;
-
-        {error, _} = Error ->
-            Error;
-        Error ->
-            {error, Error}
+            end
     end
 .
 
+get_opt(Key, #state{config=Config}) ->
+    get_opt(Key, Config);
 get_opt(Key, Opts) ->
     case proplists:get_value(Key, Opts) of
         undefined ->
@@ -122,6 +152,19 @@ start_app() ->
 
 
 %% @private
+handle_cast({finish_compact, CompactorPID}, State) ->
+    srv_finish_compact(State, CompactorPID);
+handle_cast(sync, #state{btree=#btree{fd=Fd}}=State) ->
+    couch_file:sync(Fd),
+    {noreply, State};
+handle_cast(compaction_check, #state{btree=Bt,path=Path}=State) ->
+    case State#state.compactor =:= undefined of
+        true ->
+            CompactorPID = riak_btree_backend_compactor:start(self(), Bt, Path),
+            State#state{compactor=CompactorPID};
+        false ->
+            {noreply, State}
+    end;
 handle_cast(_, State) -> {noreply, State}.
 
 %% @private
@@ -139,11 +182,40 @@ handle_call(drop, _From, State) ->
 get_btree(SrvRef) ->
     gen_server:call(SrvRef,get_btree).
 
-optional_header_update(Bt, Bt) -> ok;
-optional_header_update(#btree{fd = Fd}, Bt2) ->
+commit_data(Bt, Bt, State) -> State;
+commit_data(#btree{fd = Fd}, Bt2, State) ->
     ok = couch_file:write_header(Fd,
 				 #db_header{local_docs_btree_state =
-						couch_btree:get_state(Bt2)}).
+						couch_btree:get_state(Bt2)}),
+    case get_opt(sync_strategy, State) of
+        o_sync ->
+            couch_file:sync(Fd);
+        _ ->
+            ok
+    end,
+    State.
+
+
+%% must be called from compactor
+finish_compact(SrvRef) ->
+    gen_server:cast(SrvRef, {finish_compact, self()}).
+
+srv_finish_compact(#state{compactor=CompactorPID, btree=#btree{fd=FdIn}, path=Path}=State,
+                   {finish_compact, CompactorPID}) ->
+
+    ok = couch_file:sync(FdIn),
+    ok = couch_file:close(FdIn),
+    ok = file:rename(Path, Path ++ ".save"),
+
+    try riak_btree_backend_compactor:complete_compaction(CompactorPID, Path) of
+        {ok, BTree} ->
+            {noreply, State#state{compactor=undefined, btree=BTree}}
+    catch
+        Class:Reason ->
+            error_logger:error_msg("compaction swap failed with ~p:~p", [Class,Reason]),
+            ok = file:rename(Path ++ ".save", Path),
+            {noreply, initstate(Path, State#state.config)}
+    end.
 
 
 % @spec stop(state()) -> ok | {error, Reason :: term()}
@@ -170,22 +242,32 @@ get(SrvRef,BKey) ->
 % key must be 160b
 put(SrvRef,BKey,Val) ->
     gen_server:call(SrvRef, {put, BKey,Val}).
-srv_put(#state{btree=Bt},BKey,Val) ->
+srv_put(#state{btree=Bt,compactor=CompactorPID}=State,BKey,Val) ->
     Key = sext:encode(BKey),
     {ok, Bt2} = couch_btree:add_remove(Bt, [{Key, Val}], [Key]),
-    ok = optional_header_update(Bt, Bt2),
-    {reply, ok, #state{btree=Bt2}}.
+    State2 = commit_data(Bt, Bt2, State),
+    case CompactorPID of
+        undefined  -> ok;
+        _ ->
+            gen_server:cast(CompactorPID, {did_put, Key, Val, Bt2})
+    end,
+    {reply, ok, State2#state{btree=Bt2}}.
 
 % delete(state(), riak_object:bkey()) ->
 %   ok | {error, Reason :: term()}
 % key must be 160b
 delete(SrvRef,BKey) ->
     gen_server:call(SrvRef, {delete, BKey}).
-srv_delete(#state{btree=Bt}, BKey) ->
+srv_delete(#state{btree=Bt,compactor=CompactorPID}=State, BKey) ->
     Key = sext:encode(BKey),
     {ok, Bt2} = couch_btree:add_remove(Bt, [], [Key]),
-    ok = optional_header_update(Bt, Bt2),
-    {reply, ok, #state{btree=Bt2}}.
+    State2 = commit_data(Bt, Bt2,State),
+    case CompactorPID of
+        undefined  -> ok;
+        _ ->
+            gen_server:cast(CompactorPID, {did_delete, Key, Bt2})
+    end,
+    {reply, ok, State2#state{btree=Bt2}}.
 
 % list(state()) -> [riak_object:bkey()]
 list(SrvRef) ->
@@ -287,6 +369,18 @@ srv_drop(#state{btree=#btree{fd=Fd}, path=P}) ->
     ok = file:delete(P),
     {reply, ok, #state{}}.
 
+callback({Ref, _}, Ref, {sync, SyncInterval}) when is_reference(Ref) ->
+    case erlang:get(Ref) of
+        SrvRef when is_pid(SrvRef) ->
+            gen_server:cast(Ref, sync)
+    end,
+    schedule_sync(Ref, SyncInterval);
+callback({Ref, _}, Ref, compaction_check) when is_reference(Ref) ->
+    case erlang:get(Ref) of
+        SrvRef when is_pid(SrvRef) ->
+            gen_server:cast(Ref, compaction_check)
+    end,
+    schedule_compaction(Ref);
 %% Ignore callbacks for other backends so multi backend works
 callback(_State, _Ref, _Msg) ->
     ok.
@@ -299,6 +393,31 @@ terminate(_Reason, _State) -> ok.
 
 %% @private
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
+
+
+%% @private
+%% Schedule sync (if necessary)
+maybe_schedule_sync(Ref) when is_reference(Ref) ->
+    case application:get_env(riak_btree_backend, sync_strategy) of
+        {ok, {seconds, Seconds}} ->
+            SyncIntervalMs = timer:seconds(Seconds),
+            schedule_sync(Ref, SyncIntervalMs);
+        {ok, none} ->
+            ok;
+        BadStrategy ->
+            error_logger:info_msg("Ignoring invalid bitcask sync strategy: ~p\n",
+                                  [BadStrategy]),
+            ok
+    end.
+
+schedule_sync(Ref, SyncIntervalMs) when is_reference(Ref) ->
+    riak_kv_backend:callback_after(SyncIntervalMs, Ref, {sync, SyncIntervalMs}).
+
+schedule_compaction(Ref) when is_reference(Ref) ->
+    riak_kv_backend:callback_after(?COMPACTION_CHECK_INTERVAL, Ref, compaction_check).
+
+
+
 
 -ifdef(TEST).
 %%

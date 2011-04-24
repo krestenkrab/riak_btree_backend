@@ -1,12 +1,27 @@
 {application, riak_btree_backend,
  [
   {description, ""},
-  {vsn, "0.1"},
+  {vsn, "0.1.1"},
   {registered, []},
   {applications, [
                   kernel,
                   stdlib
                  ]},
   {mod, { riak_btree_backend_app, []}},
-  {env, []}
+  {env, [
+         %% Where to store files
+         %% {data_root, "/some/path"}
+
+         %% Strategies available for syncing data to disk:
+         %% * none          - let the O/S decide
+         %% * o_sync        - use the O_SYNC flag to sync each write
+         %% * {seconds, N}  - call bitcask:sync/1 every N seconds
+         %%
+         %% Note that for the {seconds, N} strategy, it is up to the
+         %% API caller to execute the call on the interval. This config
+         %% option is (currently) a convenient placeholder for calling
+         %% applications.
+
+         {sync_strategy, none}
+  ]}
  ]}.

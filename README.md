@@ -3,8 +3,8 @@ riak_btree_backend
 
 This module is a storage backend for [Riak](http://wiki.basho.com),
 which uses `couch_btree` to store data.  `couch_btree` is an
-append-only format, and this module provides no means to do
-"compaction", but that could easily be added.
+append-only format, and so just like CouchDB, it runs a compaction
+periodically.
 
 Compared to other backends, this has the following properties:
 
@@ -13,19 +13,22 @@ Compared to other backends, this has the following properties:
   have decent performance
 - Is pure Erlang (makes me and Erjang happy)
 
-As is, this could be a fine format for storing log records that you'll
-never delete anyway; but if you need compaction then you'd have to
-implement it.
+Compaction should really be triggered by some measure of fragmentation
+in the data file, so that is an option to consider for the future.
+Right now it runs once an hour.
 
-To configure riak to use this, edit your `app.config` to use the btree
-backend.
+To configure riak to use `riak_btree_backend`, edit your `app.config`
+to use the btree backend.
 
     {riak_kv, [
         {storage_backend, riak_btree_backend},
         ...
 
     {riak_btree_backend, [
-             {data_root, "data/btree"}
+             {data_root, "data/btree"},
+
+             %% sync strategy is one of: none, {seconds, N}, or o_sync
+             {sync_strategy, {seconds, 20}}
         ]},
 
 The easiest way to pull in all the right things in your riak is to
