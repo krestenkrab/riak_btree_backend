@@ -15,9 +15,10 @@ Compared to other backends, this has the following properties:
 
 Compaction should really be triggered by some measure of fragmentation
 in the data file, so that is an option to consider for the future.
-Right now it runs once an hour.
+Right now it runs once an hour, but can be configured using the
+`compaction_interval` environment setting.
 
-To configure riak to use `riak_btree_backend`, edit your `app.config`
+To configure Riak to use `riak_btree_backend`, edit your `app.config`
 to use the btree backend.
 
     {riak_kv, [
