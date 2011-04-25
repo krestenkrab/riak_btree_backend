@@ -29,6 +29,7 @@
 -export([append_term/2, append_term_md5/2]).
 -export([write_header/2, read_header/1]).
 -export([delete/2, delete/3, init_delete_dir/1]).
+-export([set_osync/1]).
 
 % gen_server callbacks
 -export([init/1, terminate/2, code_change/3]).
@@ -172,6 +173,11 @@ sync(Filepath) when is_list(Filepath) ->
 sync(Fd) ->
     gen_server:call(Fd, sync, infinity).
 
+
+set_osync(Fd) ->
+    gen_server:call(Fd, set_osync).
+
+
 %%----------------------------------------------------------------------
 %% Purpose: Close the file.
 %% Returns: ok
@@ -299,6 +305,14 @@ maybe_track_open_os_files(FileOptions) ->
 terminate(_Reason, #file{fd = Fd}) ->
     ok = file:close(Fd).
 
+
+handle_call(set_osync, _From, #file{fd = Fd}=File) ->
+    case Fd of
+        {file_descriptor, prim_file, {_Port, RealFd}} ->
+            {reply, bitcask_nifs:set_osync(RealFd), File};
+        _ ->
+            {reply, {error, notsup}, File}
+    end;
 
 handle_call({pread_iolist, Pos}, _From, File) ->
     {RawData, NextPos} = try
