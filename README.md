@@ -28,7 +28,10 @@ to use the btree backend.
              {data_root, "data/btree"},
 
              %% sync strategy is one of: none, {seconds, N}, or o_sync
-             {sync_strategy, {seconds, 20}}
+             {sync_strategy, {seconds, 20}},
+
+             %% how often to do copy compaction
+             {compaction_interval, {minutes, 10}}
         ]},
 
 The easiest way to pull in all the right things in your riak is to
