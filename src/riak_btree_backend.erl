@@ -86,6 +86,7 @@ initstate(BtreeFileName, Config) ->
     case couch_file:open(BtreeFileName, [sys_db]) of
 
         {ok, Fd} -> %% open existing file
+            maybe_set_osync(Fd, Config),
             {ok, #db_header{local_docs_btree_state = HeaderBtree}} =
                 couch_file:read_header(Fd),
             {ok, Bt} = couch_btree:open(HeaderBtree, Fd, []),
@@ -97,6 +98,7 @@ initstate(BtreeFileName, Config) ->
             case couch_file:open(BtreeFileName ++ ".save", [sys_db]) of
 
                 {ok, Fd} -> %% open existing file
+                    maybe_set_osync(Fd, Config),
                     file:rename(BtreeFileName ++ ".save", BtreeFileName),
                     {ok, #db_header{local_docs_btree_state = HeaderBtree}} =
                         couch_file:read_header(Fd),
@@ -106,6 +108,7 @@ initstate(BtreeFileName, Config) ->
                 {error, enoent} ->
                     case couch_file:open(BtreeFileName, [create,sys_db]) of
                         {ok, Fd} ->
+                            maybe_set_osync(Fd, Config),
                             Header = #db_header{},
                             ok = couch_file:write_header(Fd, Header),
                             {ok, Bt} = couch_btree:open(nil, Fd, []),
@@ -124,6 +127,14 @@ initstate(BtreeFileName, Config) ->
             end
     end
 .
+
+maybe_set_osync(Fd,Config) ->
+    case get_opt(sync_strategy, Config) of
+        o_sync ->
+            ok = couch_file:set_osync(Fd);
+        _ ->
+            ok
+    end.
 
 get_opt(Key, #state{config=Config}) ->
     get_opt(Key, Config);
@@ -186,7 +197,7 @@ commit_data(#btree{fd = Fd}, Bt2, State) ->
 				 #db_header{local_docs_btree_state =
 						couch_btree:get_state(Bt2)}),
     case get_opt(sync_strategy, State) of
-        o_sync ->
+        sync ->
             couch_file:sync(Fd);
         _ ->
             ok
@@ -404,6 +415,10 @@ maybe_schedule_sync(Ref) when is_reference(Ref) ->
             SyncIntervalMs = timer:seconds(Seconds),
             schedule_sync(Ref, SyncIntervalMs);
         {ok, none} ->
+            ok;
+        {ok, sync} ->
+            ok;
+        {ok, o_sync} ->
             ok;
         BadStrategy ->
             error_logger:info_msg("Ignoring invalid riak_btree sync strategy: ~p\n",
