@@ -79,7 +79,7 @@ init([SrvRef, BtIn, FileName]) ->
             ok = couch_file:write_header(FdOut, Header),
             {ok, BtOut} = couch_btree:open(nil, FdOut, []),
             gen_server:cast(self(), copy_more),
-            {ok, #state{ in=BtIn, out=BtOut,
+            {ok, #state{ in=BtIn, out=BtOut#btree{less=BtIn#btree.less},
                          next_key= <<>>,
                          srv=SrvRef,
                          out_name=CompactFile  }};
@@ -87,8 +87,8 @@ init([SrvRef, BtIn, FileName]) ->
             Error
     end.
 
-handle_cast({did_delete, BinKey, BtIn}, #state{out=BtOut,next_key=NextKey} = State) ->
-    case BinKey < NextKey of
+handle_cast({did_delete, BinKey, #btree{less=Less}=BtIn}, #state{out=BtOut,next_key=NextKey} = State) ->
+    case Less(BinKey, NextKey) of
         true ->
             {ok, BtOut2} = couch_btree:add_remove(BtOut, [], [BinKey]),
             {noreply, State#state{in=BtIn, out=BtOut2}};
@@ -96,8 +96,8 @@ handle_cast({did_delete, BinKey, BtIn}, #state{out=BtOut,next_key=NextKey} = Sta
             {noreply, State#state{in=BtIn}}
     end;
 
-handle_cast({did_put, BinKey, BinVal, BtIn}, #state{out=BtOut,next_key=NextKey}=State) ->
-    case BinKey < NextKey of
+handle_cast({did_put, BinKey, BinVal, #btree{less=Less}=BtIn}, #state{out=BtOut,next_key=NextKey}=State) ->
+    case Less(BinKey, NextKey) of
         true ->
             {ok, BtOut2} = couch_btree:add_remove(BtOut, [{BinKey,BinVal}], [BinKey]),
             {noreply, State#state{in=BtIn, out=BtOut2}};
