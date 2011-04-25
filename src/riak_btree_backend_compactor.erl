@@ -56,6 +56,7 @@
                 out :: #btree{},
                 out_name :: string(),
                 next_key= <<"">> :: binary(),
+                done_copying = false,
                 srv :: pid()}).
 
 start(SrvRef,Bt,FileName) ->
@@ -88,7 +89,7 @@ init([SrvRef, BtIn, FileName]) ->
     end.
 
 handle_cast({did_delete, BinKey, #btree{less=Less}=BtIn}, #state{out=BtOut,next_key=NextKey} = State) ->
-    case Less(BinKey, NextKey) of
+    case State#state.done_copying orelse Less(BinKey, NextKey) of
         true ->
             {ok, BtOut2} = couch_btree:add_remove(BtOut, [], [BinKey]),
             {noreply, State#state{in=BtIn, out=BtOut2}};
@@ -97,7 +98,7 @@ handle_cast({did_delete, BinKey, #btree{less=Less}=BtIn}, #state{out=BtOut,next_
     end;
 
 handle_cast({did_put, BinKey, BinVal, #btree{less=Less}=BtIn}, #state{out=BtOut,next_key=NextKey}=State) ->
-    case Less(BinKey, NextKey) of
+    case State#state.done_copying orelse Less(BinKey, NextKey) of
         true ->
             {ok, BtOut2} = couch_btree:add_remove(BtOut, [{BinKey,BinVal}], [BinKey]),
             {noreply, State#state{in=BtIn, out=BtOut2}};
@@ -124,7 +125,7 @@ handle_cast(copy_more, #state{next_key=NextKey,out=BtOut,in=BtIn}=State) ->
             ReverseKVList = lists:reverse(KVList),
             {ok, BtOut2} = couch_btree:add_remove(BtOut, ReverseKVList, []),
             riak_btree_backend:finish_compact(State#state.srv),
-            {noreply, State#state{out=BtOut2}}
+            {noreply, State#state{out=BtOut2, done_copying=true}}
     end.
 
 handle_call({complete_compaction, SrvRef, InFile},
