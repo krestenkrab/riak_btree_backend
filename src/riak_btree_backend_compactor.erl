@@ -115,12 +115,14 @@ handle_cast(copy_more, #state{next_key=NextKey,out=BtOut,in=BtIn}=State) ->
 
     case couch_btree:fold(BtIn, Fun, {acc, [], 1000}, [{start_key, NextKey}]) of
         {ok, _, {limit_exhausted, NextStartKey, KVList}} ->
-            {ok, BtOut2} = couch_btree:add_remove(BtOut, KVList, []),
-            gen_server:cast(copy_more),
+            ReverseKVList = lists:reverse(KVList),
+            {ok, BtOut2} = couch_btree:add_remove(BtOut, ReverseKVList, []),
+            gen_server:cast(self(), copy_more),
             {noreply, State#state{out=BtOut2, next_key=NextStartKey}};
 
         {ok, _, {acc, KVList,_Count}} ->
-            {ok, BtOut2} = couch_btree:add_remove(BtOut, KVList, []),
+            ReverseKVList = lists:reverse(KVList),
+            {ok, BtOut2} = couch_btree:add_remove(BtOut, ReverseKVList, []),
             riak_btree_backend:finish_compact(State#state.srv),
             {noreply, State#state{out=BtOut2}}
     end.
