@@ -139,12 +139,7 @@ handle_call({complete_compaction, SrvRef, InFile},
 
     file:rename(CompactFile, InFile),
 
-    {ok, FdIn2} = couch_file:open(InFile, [sys_db]),
-    {ok, #db_header{local_docs_btree_state = HeaderBtree}} =
-        couch_file:read_header(FdIn2),
-    {ok, BtIn2} = couch_btree:open(HeaderBtree, FdIn2, []),
-
-    {stop,normal,{ok, BtIn2},State}.
+    {stop,normal,ok,State}.
 
 
 %% @private

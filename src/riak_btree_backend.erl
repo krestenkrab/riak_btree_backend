@@ -47,8 +47,6 @@
 % @type state() = term().
 -record(state, {btree, path, compactor, config}).
 
--define(COMPACTION_CHECK_INTERVAL, timer:minutes(60)).
-
 % @spec start(Partition :: integer(), Config :: proplist()) ->
 %                        {ok, state()} | {{error, Reason :: term()}, state()}
 start(Partition, Config) ->
@@ -160,8 +158,8 @@ handle_cast(sync, #state{btree=#btree{fd=Fd}}=State) ->
 handle_cast(compaction_check, #state{btree=Bt,path=Path}=State) ->
     case State#state.compactor =:= undefined of
         true ->
-            CompactorPID = riak_btree_backend_compactor:start(self(), Bt, Path),
-            State#state{compactor=CompactorPID};
+            {ok,CompactorPID} = riak_btree_backend_compactor:start(self(), Bt, Path),
+            {noreply, State#state{compactor=CompactorPID}};
         false ->
             {noreply, State}
     end;
@@ -200,16 +198,24 @@ commit_data(#btree{fd = Fd}, Bt2, State) ->
 finish_compact(SrvRef) ->
     gen_server:cast(SrvRef, {finish_compact, self()}).
 
-srv_finish_compact(#state{compactor=CompactorPID, btree=#btree{fd=FdIn}, path=Path}=State,
-                   {finish_compact, CompactorPID}) ->
+srv_finish_compact(#state{compactor=CompactorPID, btree=#btree{fd=FdIn}=Bt, path=Path}=State,
+                   CompactorPID) ->
 
     ok = couch_file:sync(FdIn),
+    error_logger:info_msg("checking size of old: ~p", [Bt]),
+    {ok, BeforeBytes} = couch_file:bytes(FdIn),
     ok = couch_file:close(FdIn),
     ok = file:rename(Path, Path ++ ".save"),
 
     try riak_btree_backend_compactor:complete_compaction(CompactorPID, Path) of
-        {ok, BTree} ->
-            {noreply, State#state{compactor=undefined, btree=BTree}}
+        ok ->
+            {ok, State2} = initstate(Path, State#state.config),
+            ok = file:delete(Path ++ ".save"),
+            #btree{fd=FdOut} = State2#state.btree,
+            {ok, AfterBytes} = couch_file:bytes(FdOut),
+            error_logger:info_msg("Compacted ~s (~p -> ~p)",
+                                  [Path, BeforeBytes, AfterBytes]),
+            {noreply, State2}
     catch
         Class:Reason ->
             error_logger:error_msg("compaction swap failed with ~p:~p", [Class,Reason]),
@@ -369,20 +375,15 @@ srv_drop(#state{btree=#btree{fd=Fd}, path=P}) ->
     ok = file:delete(P),
     {reply, ok, #state{}}.
 
-callback({Ref, _}, Ref, {sync, SyncInterval}) when is_reference(Ref) ->
-    case erlang:get(Ref) of
-        SrvRef when is_pid(SrvRef) ->
-            gen_server:cast(Ref, sync)
-    end,
+callback(SrvRef, Ref, {sync, SyncInterval}) when is_reference(Ref) ->
+    gen_server:cast(SrvRef, sync),
     schedule_sync(Ref, SyncInterval);
-callback({Ref, _}, Ref, compaction_check) when is_reference(Ref) ->
-    case erlang:get(Ref) of
-        SrvRef when is_pid(SrvRef) ->
-            gen_server:cast(Ref, compaction_check)
-    end,
+callback(SrvRef, Ref, compaction_check) when is_reference(Ref) ->
+    gen_server:cast(SrvRef, compaction_check),
     schedule_compaction(Ref);
 %% Ignore callbacks for other backends so multi backend works
 callback(_State, _Ref, _Msg) ->
+    error_logger:info_msg("Ignored callback (~p,~p,~p)", [_State,_Ref,_Msg]),
     ok.
 
 %% @private
@@ -405,7 +406,7 @@ maybe_schedule_sync(Ref) when is_reference(Ref) ->
         {ok, none} ->
             ok;
         BadStrategy ->
-            error_logger:info_msg("Ignoring invalid bitcask sync strategy: ~p\n",
+            error_logger:info_msg("Ignoring invalid riak_btree sync strategy: ~p\n",
                                   [BadStrategy]),
             ok
     end.
@@ -414,7 +415,15 @@ schedule_sync(Ref, SyncIntervalMs) when is_reference(Ref) ->
     riak_kv_backend:callback_after(SyncIntervalMs, Ref, {sync, SyncIntervalMs}).
 
 schedule_compaction(Ref) when is_reference(Ref) ->
-    riak_kv_backend:callback_after(?COMPACTION_CHECK_INTERVAL, Ref, compaction_check).
+    case application:get_env(?MODULE, compaction_interval) of
+        {ok, {minutes, Minutes}} ->
+            Interval = timer:minutes(Minutes),
+            riak_kv_backend:callback_after(Interval, Ref, compaction_check);
+        BadCompaction ->
+            error_logger:info_msg("Ignoring invalid riak_btree compaction interval: ~p\n",
+                                  [BadCompaction]),
+            ok
+    end.
 
 
 

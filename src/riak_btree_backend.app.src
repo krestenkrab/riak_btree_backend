@@ -22,6 +22,9 @@
          %% option is (currently) a convenient placeholder for calling
          %% applications.
 
-         {sync_strategy, none}
+         {sync_strategy, none},
+
+         %% how often to run compaction
+         {compaction_interval, {minutes, 60}}
   ]}
  ]}.
