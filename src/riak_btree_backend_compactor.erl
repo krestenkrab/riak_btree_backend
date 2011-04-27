@@ -119,6 +119,7 @@ handle_cast(copy_more, #state{next_key=NextKey,out=BtOut,in=BtIn}=State) ->
             ReverseKVList = lists:reverse(KVList),
             {ok, BtOut2} = couch_btree:add_remove(BtOut, ReverseKVList, []),
             gen_server2:cast(self(), copy_more),
+            ok = couch_file:sync(BtOut2#btree.fd),
             {noreply, State#state{out=BtOut2, next_key=NextStartKey}};
 
         {ok, _, {acc, KVList,_Count}} ->
