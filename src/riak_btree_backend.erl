@@ -115,15 +115,11 @@ initstate(BtreeFileName, Config) ->
                             {ok, #state{ btree=Bt, path=BtreeFileName, config=Config }};
 
                         {error, _} = Error ->
-                            Error;
-                        Error ->
-                            {error, Error}
+                            Error
                     end;
 
                 {error, _} = Error ->
-                    Error;
-                Error ->
-                    {error, Error}
+                    Error
             end
     end
 .
