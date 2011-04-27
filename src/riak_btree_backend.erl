@@ -57,7 +57,7 @@ start(Partition, Config) ->
 
     Ref = make_ref(),
     erlang:put(Ref,PID),
-    schedule_compaction(Ref),
+    schedule_compaction(Ref, init),
     maybe_schedule_sync(Ref),
     PID.
 
@@ -391,7 +391,7 @@ callback(SrvRef, Ref, {sync, SyncInterval}) when is_reference(Ref) ->
     schedule_sync(Ref, SyncInterval);
 callback(SrvRef, Ref, compaction_check) when is_reference(Ref) ->
     gen_server2:cast(SrvRef, compaction_check),
-    schedule_compaction(Ref);
+    schedule_compaction(Ref, timer);
 %% Ignore callbacks for other backends so multi backend works
 callback(_State, _Ref, _Msg) ->
     error_logger:info_msg("Ignored callback (~p,~p,~p)", [_State,_Ref,_Msg]),
@@ -429,11 +429,18 @@ maybe_schedule_sync(Ref) when is_reference(Ref) ->
 schedule_sync(Ref, SyncIntervalMs) when is_reference(Ref) ->
     riak_kv_backend:callback_after(SyncIntervalMs, Ref, {sync, SyncIntervalMs}).
 
-schedule_compaction(Ref) when is_reference(Ref) ->
+schedule_compaction(Ref, Why) when is_reference(Ref) ->
     case application:get_env(?MODULE, compaction_interval) of
         {ok, {minutes, Minutes}} ->
             Interval = timer:minutes(Minutes),
-            riak_kv_backend:callback_after(Interval, Ref, compaction_check);
+            case Why of
+                timer ->
+                    riak_kv_backend:callback_after(Interval, Ref, compaction_check);
+                init ->
+                    %% start the first compaction in this partition at a random
+                    %% time between now and the first cycle
+                    riak_kv_backend:callback_after(random:uniform(Interval), Ref, compaction_check)
+            end;
         BadCompaction ->
             error_logger:info_msg("Ignoring invalid riak_btree compaction interval: ~p\n",
                                   [BadCompaction]),
