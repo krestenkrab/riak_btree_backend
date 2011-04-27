@@ -211,7 +211,6 @@ srv_finish_compact(#state{compactor=CompactorPID, btree=#btree{fd=FdIn}, path=Pa
     ok = couch_file:sync(FdIn),
 %    error_logger:info_msg("checking size of old: ~p", [Bt]),
     {ok, BeforeBytes} = couch_file:bytes(FdIn),
-    ok = couch_file:close(FdIn),
     ok = file:rename(Path, Path ++ ".save"),
 
     try riak_btree_backend_compactor:complete_compaction(CompactorPID, Path) of
@@ -231,6 +230,8 @@ srv_finish_compact(#state{compactor=CompactorPID, btree=#btree{fd=FdIn}, path=Pa
             ok = file:rename(Path ++ ".save", Path),
             {ok, NewState} = initstate(Path, State#state.config),
             {noreply, NewState}
+    after
+        couch_file:close(FdIn)
     end.
 
 
