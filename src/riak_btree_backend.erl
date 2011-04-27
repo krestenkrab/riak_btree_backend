@@ -437,7 +437,7 @@ schedule_compaction(Ref, Why) when is_reference(Ref) ->
                 init ->
                     %% start the first compaction in this partition at a random
                     %% time between now and the first cycle
-                    riak_kv_backend:callback_after(random:uniform(Interval), Ref, compaction_check)
+                    riak_kv_backend:callback_after(crypto:rand_uniform(1, Interval), Ref, compaction_check)
             end;
         BadCompaction ->
             error_logger:info_msg("Ignoring invalid riak_btree compaction interval: ~p\n",
