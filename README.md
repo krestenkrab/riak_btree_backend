@@ -14,7 +14,10 @@ Compared to other backends, this has the following properties:
   list_keys_in_bucket have reasonable performance
 - Keys and values are stored together (there is no separate index or
   hint files) which may slow down key scans.
-- Is pure Erlang (makes me and Erjang happy)
+- Is slower than `innostore`, for my bench setup with 3 nodes on 3 separate
+  MacMinis it yields ~400 PUTs/sec w/btree compared to ~1000 PUTs/sec for
+  `innostore` (and much slower than `bitcask`).
+- But is pure Erlang (which makes me and Erjang happy)
 
 Compaction should really be triggered by some measure of fragmentation
 in the data file, so there is something to implement some other time.
