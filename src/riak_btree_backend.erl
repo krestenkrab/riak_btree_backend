@@ -218,7 +218,7 @@ srv_finish_compact(#state{compactor=CompactorPID, btree=#btree{fd=FdIn}, path=Pa
         ok ->
             {ok, State2} = initstate(Path, State#state.config),
             ok = file:delete(Path ++ ".save"),
-            {ok, AfterBytes} = couch_file:bytes(State2#btree.fd),
+            {ok, AfterBytes} = couch_file:bytes((State2#state.btree)#btree.fd),
             error_logger:info_msg("Compacted ~s to ~p% (~pMB -> ~pMB)",
                                   [Path,
                                    (100 * AfterBytes) div (BeforeBytes+1),
