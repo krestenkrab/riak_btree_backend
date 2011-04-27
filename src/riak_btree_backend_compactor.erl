@@ -69,7 +69,7 @@ did_put(CompactorPID, BinKey, BinValue, BtIn) ->
     gen_server:cast(CompactorPID, {did_put, BinKey, BinValue, BtIn}).
 
 complete_compaction(CompactorPID, InFile) ->
-    gen_server:call(CompactorPID, {complete_compaction, self(), InFile}).
+    gen_server:call(CompactorPID, {complete_compaction, self(), InFile}, infinity).
 
 
 init([SrvRef, BtIn, FileName]) ->
