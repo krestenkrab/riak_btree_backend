@@ -11,7 +11,7 @@
 % the License.
 
 -module(couch_file).
--behaviour(gen_server).
+-behaviour(gen_server2).
 
 -include("couch_db.hrl").
 
@@ -31,7 +31,7 @@
 -export([delete/2, delete/3, init_delete_dir/1]).
 -export([set_osync/1]).
 
-% gen_server callbacks
+% gen_server2 callbacks
 -export([init/1, terminate/2, code_change/3]).
 -export([handle_call/3, handle_cast/2, handle_info/2]).
 
@@ -46,7 +46,7 @@ open(Filepath) ->
     open(Filepath, []).
 
 open(Filepath, Options) ->
-    case gen_server:start_link(couch_file,
+    case gen_server2:start_link(couch_file,
             {Filepath, Options, self(), Ref = make_ref()}, []) of
     {ok, Fd} ->
         {ok, Fd};
@@ -93,12 +93,12 @@ append_term_md5(Fd, Term) ->
 
 append_binary(Fd, Bin) ->
     Size = iolist_size(Bin),
-    gen_server:call(Fd, {append_bin,
+    gen_server2:call(Fd, {append_bin,
             [<<0:1/integer,Size:31/integer>>, Bin]}, infinity).
     
 append_binary_md5(Fd, Bin) ->
     Size = iolist_size(Bin),
-    gen_server:call(Fd, {append_bin,
+    gen_server2:call(Fd, {append_bin,
             [<<1:1/integer,Size:31/integer>>, couch_util:md5(Bin), Bin]}, infinity).
 
 
@@ -128,7 +128,7 @@ pread_binary(Fd, Pos) ->
 
 
 pread_iolist(Fd, Pos) ->
-    case gen_server:call(Fd, {pread_iolist, Pos}, infinity) of
+    case gen_server2:call(Fd, {pread_iolist, Pos}, infinity) of
     {ok, IoList, <<>>} ->
         {ok, IoList};
     {ok, IoList, Md5} ->
@@ -150,7 +150,7 @@ pread_iolist(Fd, Pos) ->
 
 % length in bytes
 bytes(Fd) ->
-    gen_server:call(Fd, bytes, infinity).
+    gen_server2:call(Fd, bytes, infinity).
 
 %%----------------------------------------------------------------------
 %% Purpose: Truncate a file to the number of bytes.
@@ -159,7 +159,7 @@ bytes(Fd) ->
 %%----------------------------------------------------------------------
 
 truncate(Fd, Pos) ->
-    gen_server:call(Fd, {truncate, Pos}, infinity).
+    gen_server2:call(Fd, {truncate, Pos}, infinity).
 
 %%----------------------------------------------------------------------
 %% Purpose: Ensure all bytes written to the file are flushed to disk.
@@ -171,11 +171,11 @@ sync(Filepath) when is_list(Filepath) ->
     {ok, Fd} = file:open(Filepath, [append, raw]),
     try file:sync(Fd) after file:close(Fd) end;
 sync(Fd) ->
-    gen_server:call(Fd, sync, infinity).
+    gen_server2:call(Fd, sync, infinity).
 
 
 set_osync(Fd) ->
-    gen_server:call(Fd, set_osync).
+    gen_server2:call(Fd, set_osync).
 
 
 %%----------------------------------------------------------------------
@@ -217,7 +217,7 @@ init_delete_dir(RootDir) ->
 
 
 read_header(Fd) ->
-    case gen_server:call(Fd, find_header, infinity) of
+    case gen_server2:call(Fd, find_header, infinity) of
     {ok, Bin} ->
         {ok, binary_to_term(Bin)};
     Else ->
@@ -229,7 +229,7 @@ write_header(Fd, Data) ->
     Md5 = couch_util:md5(Bin),
     % now we assemble the final header binary and write to disk
     FinalBin = <<Md5/binary, Bin/binary>>,
-    gen_server:call(Fd, {write_header, FinalBin}, infinity).
+    gen_server2:call(Fd, {write_header, FinalBin}, infinity).
 
 
 

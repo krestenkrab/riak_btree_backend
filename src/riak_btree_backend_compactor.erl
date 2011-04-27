@@ -41,14 +41,14 @@
 -module(riak_btree_backend_compactor).
 -author('Kresten Krab Thorup <krab@trifork.com>').
 
--behavior(gen_server).
+-behavior(gen_server2).
 
 -include("couch_db.hrl").
 
 %% API exports
 -export([start/3, did_put/4, did_delete/3, complete_compaction/2]).
 
-%% gen_server exports
+%% gen_server2 exports
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
@@ -60,16 +60,16 @@
                 srv :: pid()}).
 
 start(SrvRef,Bt,FileName) ->
-    gen_server:start_link(?MODULE, [SrvRef,Bt,FileName], []).
+    gen_server2:start_link(?MODULE, [SrvRef,Bt,FileName], []).
 
 did_delete(CompactorPID, BinKey, BtIn) ->
-    gen_server:cast(CompactorPID, {did_delete, BinKey, BtIn}).
+    gen_server2:cast(CompactorPID, {did_delete, BinKey, BtIn}).
 
 did_put(CompactorPID, BinKey, BinValue, BtIn) ->
-    gen_server:cast(CompactorPID, {did_put, BinKey, BinValue, BtIn}).
+    gen_server2:cast(CompactorPID, {did_put, BinKey, BinValue, BtIn}).
 
 complete_compaction(CompactorPID, InFile) ->
-    gen_server:call(CompactorPID, {complete_compaction, self(), InFile}, infinity).
+    gen_server2:call(CompactorPID, {complete_compaction, self(), InFile}, infinity).
 
 
 init([SrvRef, BtIn, FileName]) ->
@@ -79,7 +79,7 @@ init([SrvRef, BtIn, FileName]) ->
             Header = #db_header{},
             ok = couch_file:write_header(FdOut, Header),
             {ok, BtOut} = couch_btree:open(nil, FdOut, []),
-            gen_server:cast(self(), copy_more),
+            gen_server2:cast(self(), copy_more),
             {ok, #state{ in=BtIn, out=BtOut#btree{less=BtIn#btree.less},
                          next_key= <<>>,
                          srv=SrvRef,
@@ -118,7 +118,7 @@ handle_cast(copy_more, #state{next_key=NextKey,out=BtOut,in=BtIn}=State) ->
         {ok, _, {limit_exhausted, NextStartKey, KVList}} ->
             ReverseKVList = lists:reverse(KVList),
             {ok, BtOut2} = couch_btree:add_remove(BtOut, ReverseKVList, []),
-            gen_server:cast(self(), copy_more),
+            gen_server2:cast(self(), copy_more),
             {noreply, State#state{out=BtOut2, next_key=NextStartKey}};
 
         {ok, _, {acc, KVList,_Count}} ->

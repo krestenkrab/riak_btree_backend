@@ -26,7 +26,7 @@
 -author('Kresten Krab Thorup <krab@trifork.com>').
 
 -behavior(riak_kv_backend).
--behavior(gen_server).
+-behavior(gen_server2).
 
 -include("couch_db.hrl").
 -ifdef(TEST).
@@ -40,7 +40,7 @@
 %% api to compactor
 -export([finish_compact/1]).
 
-%% gen_server exports
+%% gen_server2 exports
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
@@ -53,7 +53,7 @@ start(Partition, Config) ->
     %% make sure the app is started
     ok = start_app(),
 
-    PID = gen_server:start_link(?MODULE, [Partition, Config], []),
+    PID = gen_server2:start_link(?MODULE, [Partition, Config], []),
 
     Ref = make_ref(),
     erlang:put(Ref,PID),
@@ -185,7 +185,7 @@ handle_call(drop, _From, State) ->
     srv_drop(State).
 
 get_btree(SrvRef) ->
-    gen_server:call(SrvRef,get_btree).
+    gen_server2:call(SrvRef,get_btree).
 
 commit_data(Bt, Bt, State) -> State;
 commit_data(#btree{fd = Fd}, Bt2, State) ->
@@ -203,7 +203,7 @@ commit_data(#btree{fd = Fd}, Bt2, State) ->
 
 %% must be called from compactor
 finish_compact(SrvRef) ->
-    gen_server:cast(SrvRef, {finish_compact, self()}).
+    gen_server2:cast(SrvRef, {finish_compact, self()}).
 
 srv_finish_compact(#state{compactor=CompactorPID, btree=#btree{fd=FdIn}, path=Path}=State,
                    CompactorPID) ->
@@ -236,7 +236,7 @@ srv_finish_compact(#state{compactor=CompactorPID, btree=#btree{fd=FdIn}, path=Pa
 
 % @spec stop(state()) -> ok | {error, Reason :: term()}
 stop(SrvRef) ->
-    gen_server:call(SrvRef, stop).
+    gen_server2:call(SrvRef, stop).
 srv_stop(#state{btree=#btree{fd=Fd}}) ->
     couch_file:close(Fd).
 
@@ -257,7 +257,7 @@ get(SrvRef,BKey) ->
 %   ok | {error, Reason :: term()}
 % key must be 160b
 put(SrvRef,BKey,Val) ->
-    gen_server:call(SrvRef, {put, BKey,Val}).
+    gen_server2:call(SrvRef, {put, BKey,Val}).
 srv_put(#state{btree=Bt,compactor=CompactorPID}=State,BKey,Val) ->
     Key = sext:encode(BKey),
     {ok, Bt2} = couch_btree:add_remove(Bt, [{Key, Val}], [Key]),
@@ -265,7 +265,7 @@ srv_put(#state{btree=Bt,compactor=CompactorPID}=State,BKey,Val) ->
     case CompactorPID of
         undefined  -> ok;
         _ ->
-            gen_server:cast(CompactorPID, {did_put, Key, Val, Bt2})
+            gen_server2:cast(CompactorPID, {did_put, Key, Val, Bt2})
     end,
     {reply, ok, State2#state{btree=Bt2}}.
 
@@ -273,7 +273,7 @@ srv_put(#state{btree=Bt,compactor=CompactorPID}=State,BKey,Val) ->
 %   ok | {error, Reason :: term()}
 % key must be 160b
 delete(SrvRef,BKey) ->
-    gen_server:call(SrvRef, {delete, BKey}).
+    gen_server2:call(SrvRef, {delete, BKey}).
 srv_delete(#state{btree=Bt,compactor=CompactorPID}=State, BKey) ->
     Key = sext:encode(BKey),
     {ok, Bt2} = couch_btree:add_remove(Bt, [], [Key]),
@@ -281,7 +281,7 @@ srv_delete(#state{btree=Bt,compactor=CompactorPID}=State, BKey) ->
     case CompactorPID of
         undefined  -> ok;
         _ ->
-            gen_server:cast(CompactorPID, {did_delete, Key, Bt2})
+            gen_server2:cast(CompactorPID, {did_delete, Key, Bt2})
     end,
     {reply, ok, State2#state{btree=Bt2}}.
 
@@ -379,17 +379,17 @@ is_empty(SrvRef) ->
     end.
 
 drop(SrvRef) ->
-    gen_server:call(SrvRef, drop).
+    gen_server2:call(SrvRef, drop).
 srv_drop(#state{btree=#btree{fd=Fd}, path=P}) ->
     ok = couch_file:close(Fd),
     ok = file:delete(P),
     {reply, ok, #state{}}.
 
 callback(SrvRef, Ref, {sync, SyncInterval}) when is_reference(Ref) ->
-    gen_server:cast(SrvRef, sync),
+    gen_server2:cast(SrvRef, sync),
     schedule_sync(Ref, SyncInterval);
 callback(SrvRef, Ref, compaction_check) when is_reference(Ref) ->
-    gen_server:cast(SrvRef, compaction_check),
+    gen_server2:cast(SrvRef, compaction_check),
     schedule_compaction(Ref);
 %% Ignore callbacks for other backends so multi backend works
 callback(_State, _Ref, _Msg) ->
