@@ -176,7 +176,7 @@ handle_cast(_, State) -> {noreply, State}.
 handle_call(get_btree,_From,State) ->
     {reply, State#state.btree, State};
 handle_call(stop,_From,State) ->
-    {reply, srv_stop(State), State};
+    {stop, normal, ok, State};
 handle_call({put,BKey,Val},_From,State) ->
     srv_put(State,BKey,Val);
 handle_call({delete,BKey},_From,State) ->
@@ -238,8 +238,6 @@ srv_finish_compact(#state{compactor=CompactorPID, btree=#btree{fd=FdIn}, path=Pa
 % @spec stop(state()) -> ok | {error, Reason :: term()}
 stop(SrvRef) ->
     gen_server2:call(SrvRef, stop, infinity).
-srv_stop(#state{btree=#btree{fd=Fd}}) ->
-    couch_file:close(Fd).
 
 % get(state(), riak_object:bkey()) ->
 %   {ok, Val :: binary()} | {error, Reason :: term()}
