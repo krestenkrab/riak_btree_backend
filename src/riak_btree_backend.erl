@@ -205,11 +205,11 @@ commit_data(#btree{fd = Fd}, Bt2, State) ->
 finish_compact(SrvRef) ->
     gen_server:cast(SrvRef, {finish_compact, self()}).
 
-srv_finish_compact(#state{compactor=CompactorPID, btree=#btree{fd=FdIn}=Bt, path=Path}=State,
+srv_finish_compact(#state{compactor=CompactorPID, btree=#btree{fd=FdIn}, path=Path}=State,
                    CompactorPID) ->
 
     ok = couch_file:sync(FdIn),
-    error_logger:info_msg("checking size of old: ~p", [Bt]),
+%    error_logger:info_msg("checking size of old: ~p", [Bt]),
     {ok, BeforeBytes} = couch_file:bytes(FdIn),
     ok = couch_file:close(FdIn),
     ok = file:rename(Path, Path ++ ".save"),
@@ -218,10 +218,12 @@ srv_finish_compact(#state{compactor=CompactorPID, btree=#btree{fd=FdIn}=Bt, path
         ok ->
             {ok, State2} = initstate(Path, State#state.config),
             ok = file:delete(Path ++ ".save"),
-            #btree{fd=FdOut} = State2#state.btree,
-            {ok, AfterBytes} = couch_file:bytes(FdOut),
-            error_logger:info_msg("Compacted ~s (~p -> ~p)",
-                                  [Path, BeforeBytes, AfterBytes]),
+            {ok, AfterBytes} = couch_file:bytes(State2#btree.fd),
+            error_logger:info_msg("Compacted ~s to ~p% (~pMB -> ~pMB)",
+                                  [Path,
+                                   (100 * AfterBytes) div (BeforeBytes+1),
+                                   BeforeBytes div (1024*1024),
+                                   AfterBytes div (1024*1024)]),
             {noreply, State2}
     catch
         Class:Reason ->
@@ -335,7 +337,7 @@ loop_list_buckets(Bt, From, List) ->
 
     case couch_btree:fold(Bt, Fun, notfound, [{start_key, From}]) of
         {ok, _, notfound} ->
-            List;
+            lists:reverse(List);
         {ok, _, Bucket} ->
             NextFrom = sext:prefix({<<Bucket/binary,0>>,'_'}),
             loop_list_buckets(Bt,NextFrom,[Bucket|List])
