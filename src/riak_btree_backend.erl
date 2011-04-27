@@ -231,7 +231,8 @@ srv_finish_compact(#state{compactor=CompactorPID, btree=#btree{fd=FdIn}=Bt, path
         Class:Reason ->
             error_logger:error_msg("compaction swap failed with ~p:~p", [Class,Reason]),
             ok = file:rename(Path ++ ".save", Path),
-            {noreply, initstate(Path, State#state.config)}
+            {ok, NewState} = initstate(Path, State#state.config),
+            {noreply, NewState}
     end.
 
 
