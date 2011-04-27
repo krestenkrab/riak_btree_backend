@@ -266,7 +266,7 @@ srv_put(#state{btree=Bt,compactor=CompactorPID}=State,BKey,Val) ->
     case CompactorPID of
         undefined  -> ok;
         _ ->
-            gen_server2:cast(CompactorPID, {did_put, Key, Val, Bt2})
+            riak_btree_backend_compactor:did_put(CompactorPID, Key, Val, Bt2)
     end,
     {reply, ok, State2#state{btree=Bt2}}.
 
@@ -282,7 +282,7 @@ srv_delete(#state{btree=Bt,compactor=CompactorPID}=State, BKey) ->
     case CompactorPID of
         undefined  -> ok;
         _ ->
-            gen_server2:cast(CompactorPID, {did_delete, Key, Bt2})
+            riak_btree_backend_compactor:did_delete(CompactorPID, Key, Bt2)
     end,
     {reply, ok, State2#state{btree=Bt2}}.
 
