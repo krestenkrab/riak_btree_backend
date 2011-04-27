@@ -185,7 +185,7 @@ handle_call(drop, _From, State) ->
     srv_drop(State).
 
 get_btree(SrvRef) ->
-    gen_server2:call(SrvRef,get_btree).
+    gen_server2:call(SrvRef,get_btree,infinity).
 
 commit_data(Bt, Bt, State) -> State;
 commit_data(#btree{fd = Fd}, Bt2, State) ->
@@ -237,7 +237,7 @@ srv_finish_compact(#state{compactor=CompactorPID, btree=#btree{fd=FdIn}, path=Pa
 
 % @spec stop(state()) -> ok | {error, Reason :: term()}
 stop(SrvRef) ->
-    gen_server2:call(SrvRef, stop).
+    gen_server2:call(SrvRef, stop, infinity).
 srv_stop(#state{btree=#btree{fd=Fd}}) ->
     couch_file:close(Fd).
 
@@ -258,7 +258,7 @@ get(SrvRef,BKey) ->
 %   ok | {error, Reason :: term()}
 % key must be 160b
 put(SrvRef,BKey,Val) ->
-    gen_server2:call(SrvRef, {put, BKey,Val}).
+    gen_server2:call(SrvRef, {put, BKey,Val}, infinity).
 srv_put(#state{btree=Bt,compactor=CompactorPID}=State,BKey,Val) ->
     Key = sext:encode(BKey),
     {ok, Bt2} = couch_btree:add_remove(Bt, [{Key, Val}], [Key]),
@@ -274,7 +274,7 @@ srv_put(#state{btree=Bt,compactor=CompactorPID}=State,BKey,Val) ->
 %   ok | {error, Reason :: term()}
 % key must be 160b
 delete(SrvRef,BKey) ->
-    gen_server2:call(SrvRef, {delete, BKey}).
+    gen_server2:call(SrvRef, {delete, BKey}, infinity).
 srv_delete(#state{btree=Bt,compactor=CompactorPID}=State, BKey) ->
     Key = sext:encode(BKey),
     {ok, Bt2} = couch_btree:add_remove(Bt, [], [Key]),
@@ -380,7 +380,7 @@ is_empty(SrvRef) ->
     end.
 
 drop(SrvRef) ->
-    gen_server2:call(SrvRef, drop).
+    gen_server2:call(SrvRef, drop, infinity).
 srv_drop(#state{btree=#btree{fd=Fd}, path=P}) ->
     ok = couch_file:close(Fd),
     ok = file:delete(P),
